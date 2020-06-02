@@ -7,19 +7,186 @@ output:
 
 
 ## Loading and preprocessing the data
+```{r setoptions, echo = TRUE}
+library(knitr)
+opts_chunk$set(echo = TRUE)
+```
+
+```{r INPUT_SECTION}
+rm(list = ls())
+#1. Loading and preprocessing the data
+dat <- read.csv("activity.csv", header = TRUE, stringsAsFactors = FALSE)
+str(dat)
+head(dat)
+tail(dat)
+
+#convert date to date datatype
+dat$date <- as.Date(dat$date, "%Y-%m-%d")
+str(dat)
+summary(dat) #Note that only the steps variable has missing values, as denoted by the 2304 NA's.
+```
+
 
 
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+
+library(dplyr)
+library(ggplot2)
+
+steps_per_day <- select(dat, steps, date, interval) %>%
+                    group_by(date) %>%
+                    summarize(total_steps = sum(steps, na.rm = TRUE))
+steps_per_day
+```
+
+```{r plot1, echo = TRUE}
+ggplot(steps_per_day, aes(total_steps)) + geom_histogram(binwidth = 2000, color = "darkblue", fill = "lightblue") +
+  labs(title = "Histogram of total steps per day", x = "Steps per day", y = "Count") + 
+  theme(plot.title =  element_text(hjust = 0.5))
+```
+
+```{r}
+mean_total_steps <- mean(steps_per_day$total_steps)
+median_total_steps <- median(steps_per_day$total_steps)
+max(steps_per_day$total_steps)
+
+#For disabling (the printing of any value in) scientific notation
+options(scipen = 999)
+```
+
+The mean total number of steps per day is `r round(mean_total_steps, 2)` 
+
+The median total number of steps per day is `r round(median_total_steps,2)`
+
 
 
 ## What is the average daily activity pattern?
+
+```{r}
+steps_per_interval <- select(dat, steps, date, interval) %>%
+  group_by(interval) %>%
+  summarize(average_steps = mean(steps, na.rm = TRUE))
+steps_per_interval
+```
+
+```{r plot2}
+ggplot(steps_per_interval, aes(x = interval, y = average_steps)) + 
+        geom_line() +
+        labs(title = "Average number of steps per 5 minute interval",
+             x     = "5 minute interval",
+             y     = "Average number of steps") +
+        theme(plot.title =  element_text(hjust = 0.5))
+```
+
+```{r}
+(max_average_steps <- max(steps_per_interval$average_steps))
+
+(max_average_steps_interval <- steps_per_interval[
+  steps_per_interval$average_steps == max_average_steps,
+  ]$interval)
+```
+
+The 5 minute interval `r max_average_steps_interval` contains the maximum number of steps on average across all days in the dataset.
+
+
 
 
 
 ## Imputing missing values
 
+```{r}
+#As a preliminary step, Find the total missing values in the steps column in two different ways which serves to validate the result
+
+(total.missing <- nrow(dat[which(is.na(dat$steps)),]))
+summary(dat$steps)["NA's"]
+```
+
+```{r}
+str(steps_per_interval)
+str(dat)  
+head(dat)
+tail(dat)
+
+steps_per_interval <- data.frame(steps_per_interval)
+str(steps_per_interval)
+head(steps_per_interval)
+tail(steps_per_interval)
+
+#if there is a missing value for the number of steps for a particular 5 minute interval on a specific date, then we fill in the missing value with the average number of steps in that 5 minute interval. For values of number of steps that are not missing we keep them as they are.
+
+#The average number of steps in given 5 minute intervals has been computed above when we computed the variable
+#steps_per_interval. We use the earlier computation to obtain the new required result.
+
+dat <- mutate(dat, imputed.steps = ifelse(is.na(dat$steps),
+                   with (steps_per_interval, average_steps[interval %in% dat$steps]), dat$steps))
+
+head(dat)
+summary(dat)
+
+dat <- select(dat, -steps)
+head(dat)
+
+dat <- dat[,c(3,1,2)]
+head(dat)
+
+dat <- dat %>% rename(steps = imputed.steps)
+head(dat)
+tail(dat)
+
+steps_per_day.adj <- select(dat, steps, date, interval) %>%
+  group_by(date) %>%
+  summarize(total_steps = sum(steps, na.rm = TRUE))
+steps_per_day.adj
+```
+
+```{r plot3, echo = TRUE}
+ggplot(steps_per_day.adj, aes(total_steps)) + geom_histogram(binwidth = 2000, 
+          color = "darkblue", fill = "lightblue") +
+  labs(title = "Histogram of total steps per day", x = "Steps per day", y = "Count") + 
+  theme(plot.title =  element_text(hjust = 0.5))
+
+
+(mean_total_steps.adj <- mean(steps_per_day.adj$total_steps))
+(median_total_steps.adj <- median(steps_per_day.adj$total_steps))
+
+```
+
+The total number of missing values in the dataset is `r total.missing`. As noted earlier, all the missing values are in the steps variable.<br/><br/>
+Without substituting imputed values for the missing values, the mean and median values for the number of steps per day were `r round(mean_total_steps, 2)` and `r round(median_total_steps,2)` respectively which we had calculated earlier. After substituting imputed values for the missing values, the mean value for number of steps per day became `r round(mean_total_steps.adj, 2)` while the median value remained the same (`r round(median_total_steps.adj,2)`).<br/><br/>
+
+The impact of imputing the missing data is that the number of zero values for steps per day is reduced, and consequently the distribution of the average number of steps is shifted slightly to the right.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r}
+#5. Differences in activity patterns between weekdays and weekends
+head(dat)
+str(dat)
+
+dat <- mutate(dat, day = weekdays(date))
+head(dat)
+str(dat)
+
+weekdays <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+
+dat$day = ifelse((dat$day %in% weekdays), 'Weekday', 'Weekend')
+head(dat)
+
+str(dat)
+dat$day <- as.factor(dat$day)
+str(dat)
+summary(dat$day)
+levels(dat$day)
+head(dat)
+```
+
+```{r plot4}
+ggplot(dat, aes(x = interval, y = steps)) + geom_line() +
+  facet_wrap(.~day) +
+  labs(x = 'Interval', y = "Average number of steps per day")
+```
+
+
